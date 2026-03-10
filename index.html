@@ -2,19 +2,61 @@
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
 <title>计提分成计算器</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { background: #f1f5f9; }
+  body { background: #f1f5f9; font-family: 'PingFang SC', 'Microsoft YaHei', sans-serif; }
   input:focus, select:focus { outline: 2px solid #0ea5e9; outline-offset: 1px; }
   input[type=number]::-webkit-inner-spin-button { opacity: 0.5; }
   ::-webkit-scrollbar { width: 6px; height: 6px; }
   ::-webkit-scrollbar-track { background: #f1f5f9; }
   ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
+
+  /* Top bar */
+  .topbar { background: linear-gradient(135deg, #0f172a 0%, #1e3a5f 100%); padding: 16px 20px; }
+  .topbar-inner { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+  .topbar-title { flex-shrink: 0; }
+  .topbar-controls { display: flex; gap: 12px; align-items: flex-end; flex-wrap: wrap; margin-left: auto; }
+  .topbar-field { display: flex; flex-direction: column; gap: 3px; }
+
+  /* Overview grid */
+  .overview-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 24px; }
+
+  /* Main layout */
+  .main-layout { display: grid; grid-template-columns: 1fr 300px; gap: 20px; }
+
+  /* Customer card expanded grid */
+  .card-fields { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 14px; }
+  .rule-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+
+  /* Stat card value sizing */
+  .stat-value { font-size: 20px; font-weight: 800; color: #0f172a; letter-spacing: -0.5px; word-break: break-all; }
+
+  @media (max-width: 700px) {
+    .topbar { padding: 14px 14px; }
+    .topbar-controls { margin-left: 0; width: 100%; gap: 10px; }
+    .topbar-field { flex: 1 1 calc(50% - 5px); }
+    .topbar-field.full { flex: 1 1 100%; }
+    .export-btn { width: 100%; text-align: center; }
+
+    .overview-grid { grid-template-columns: repeat(2, 1fr); gap: 8px; margin-bottom: 16px; }
+
+    .main-layout { grid-template-columns: 1fr; }
+
+    .card-fields { grid-template-columns: repeat(2, 1fr); }
+    .rule-grid { grid-template-columns: 1fr; }
+
+    .stat-value { font-size: 16px; }
+  }
+
+  @media (max-width: 400px) {
+    .overview-grid { grid-template-columns: repeat(2, 1fr); }
+    .card-fields { grid-template-columns: 1fr 1fr; }
+  }
 </style>
 </head>
 <body>
@@ -22,54 +64,31 @@
 <script type="text/babel" data-presets="react">
 const { useState, useMemo, useCallback } = React;
 
-
 const RULE_TYPES = [
   { value: "revenue_pct", label: "按流水 %" },
   { value: "profit_pct", label: "按利润 %" },
-  { value: "per_order", label: "固定每单 (元)" },
-  { value: "none", label: "无" },
+  { value: "per_order",   label: "固定每单 (元)" },
+  { value: "none",        label: "无" },
 ];
 
 const fmt = (n) =>
-  n == null || isNaN(n)
-    ? "—"
-    : n.toLocaleString("zh-CN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  n == null || isNaN(n) ? "—"
+  : n.toLocaleString("zh-CN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 const pct = (n) =>
   n == null || isNaN(n) ? "—" : (n * 100).toFixed(1) + "%";
 
 let nextId = 4;
 const defaultCustomers = [
-  {
-    id: 1,
-    name: "客户A",
-    revenue: 280000,
-    cost: 245000,
-    orderCount: 420,
-    additionalFixedCost: 0,
+  { id: 1, name: "客户A", revenue: 280000, cost: 245000, orderCount: 420, additionalFixedCost: 0,
     sales: { name: "销售甲", ruleType: "profit_pct", value: 15, cap: 60 },
-    referrer: { name: "介绍人甲", ruleType: "revenue_pct", value: 0.5, cap: 50 },
-  },
-  {
-    id: 2,
-    name: "客户B",
-    revenue: 195000,
-    cost: 172000,
-    orderCount: 310,
-    additionalFixedCost: 500,
+    referrer: { name: "介绍人甲", ruleType: "revenue_pct", value: 0.5, cap: 50 } },
+  { id: 2, name: "客户B", revenue: 195000, cost: 172000, orderCount: 310, additionalFixedCost: 500,
     sales: { name: "销售乙", ruleType: "profit_pct", value: 20, cap: 65 },
-    referrer: { name: "", ruleType: "none", value: 0, cap: 0 },
-  },
-  {
-    id: 3,
-    name: "客户C",
-    revenue: 430000,
-    cost: 391000,
-    orderCount: 680,
-    additionalFixedCost: 0,
+    referrer: { name: "", ruleType: "none", value: 0, cap: 0 } },
+  { id: 3, name: "客户C", revenue: 430000, cost: 391000, orderCount: 680, additionalFixedCost: 0,
     sales: { name: "销售甲", ruleType: "per_order", value: 8, cap: 50 },
-    referrer: { name: "介绍人乙", ruleType: "profit_pct", value: 10, cap: 40 },
-  },
+    referrer: { name: "介绍人乙", ruleType: "profit_pct", value: 10, cap: 40 } },
 ];
 
 function calcCommission(rule, revenue, profit, orderCount) {
@@ -90,6 +109,17 @@ function calcCustomer(c, globalFixedPerCustomer) {
   const netProfit = grossProfit - salesComm - referrerComm - totalFixed;
   const margin = c.revenue > 0 ? netProfit / c.revenue : 0;
   return { grossProfit, salesComm, referrerComm, totalFixed, netProfit, margin };
+}
+
+const inputStyle = {
+  width: "100%", padding: "8px 10px", border: "1px solid #e2e8f0",
+  borderRadius: 7, fontSize: 14, background: "#fff", color: "#1e293b",
+  outline: "none", boxSizing: "border-box", fontFamily: "inherit",
+};
+
+const darkInputStyle = {
+  ...inputStyle, background: "rgba(255,255,255,0.08)", color: "#fff",
+  border: "1px solid rgba(255,255,255,0.15)",
 };
 
 function RuleEditor({ label, rule, onChange }) {
@@ -99,20 +129,12 @@ function RuleEditor({ label, rule, onChange }) {
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 8 }}>
         <div>
           <label style={{ fontSize: 11, color: "#94a3b8", display: "block", marginBottom: 3 }}>姓名</label>
-          <input
-            value={rule.name}
-            onChange={e => onChange({ ...rule, name: e.target.value })}
-            placeholder="留空表示无"
-            style={inputStyle}
-          />
+          <input value={rule.name} onChange={e => onChange({ ...rule, name: e.target.value })}
+            placeholder="留空表示无" style={inputStyle} />
         </div>
         <div>
           <label style={{ fontSize: 11, color: "#94a3b8", display: "block", marginBottom: 3 }}>口径</label>
-          <select
-            value={rule.ruleType}
-            onChange={e => onChange({ ...rule, ruleType: e.target.value })}
-            style={inputStyle}
-          >
+          <select value={rule.ruleType} onChange={e => onChange({ ...rule, ruleType: e.target.value })} style={inputStyle}>
             {RULE_TYPES.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
           </select>
         </div>
@@ -123,43 +145,19 @@ function RuleEditor({ label, rule, onChange }) {
             <label style={{ fontSize: 11, color: "#94a3b8", display: "block", marginBottom: 3 }}>
               {rule.ruleType === "per_order" ? "每单金额（元）" : "比例（%）"}
             </label>
-            <input
-              type="number"
-              value={rule.value}
-              min={0}
-              onChange={e => onChange({ ...rule, value: parseFloat(e.target.value) || 0 })}
-              style={inputStyle}
-            />
+            <input type="number" value={rule.value} min={0}
+              onChange={e => onChange({ ...rule, value: parseFloat(e.target.value) || 0 })} style={inputStyle} />
           </div>
           <div>
-            <label style={{ fontSize: 11, color: "#94a3b8", display: "block", marginBottom: 3 }}>上限保护（≤利润 %，0=不限）</label>
-            <input
-              type="number"
-              value={rule.cap}
-              min={0}
-              max={100}
-              onChange={e => onChange({ ...rule, cap: parseFloat(e.target.value) || 0 })}
-              style={inputStyle}
-            />
+            <label style={{ fontSize: 11, color: "#94a3b8", display: "block", marginBottom: 3 }}>上限保护（≤利润%，0不限）</label>
+            <input type="number" value={rule.cap} min={0} max={100}
+              onChange={e => onChange({ ...rule, cap: parseFloat(e.target.value) || 0 })} style={inputStyle} />
           </div>
         </div>
       )}
     </div>
   );
 }
-
-const inputStyle = {
-  width: "100%",
-  padding: "7px 10px",
-  border: "1px solid #e2e8f0",
-  borderRadius: 7,
-  fontSize: 13,
-  background: "#fff",
-  color: "#1e293b",
-  outline: "none",
-  boxSizing: "border-box",
-  fontFamily: "inherit",
-};
 
 function CustomerCard({ customer, onUpdate, onDelete, globalFixedPerCustomer, warningThreshold }) {
   const [expanded, setExpanded] = useState(false);
@@ -170,41 +168,33 @@ function CustomerCard({ customer, onUpdate, onDelete, globalFixedPerCustomer, wa
   return (
     <div style={{
       border: `1.5px solid ${isNegative ? "#fca5a5" : isWarning ? "#fcd34d" : "#e2e8f0"}`,
-      borderRadius: 14,
-      marginBottom: 14,
+      borderRadius: 14, marginBottom: 12,
       background: isNegative ? "#fff5f5" : isWarning ? "#fffbeb" : "#fff",
-      overflow: "hidden",
-      transition: "all 0.2s",
+      overflow: "hidden", transition: "all 0.2s",
     }}>
-      {/* Header row */}
-      <div
-        onClick={() => setExpanded(!expanded)}
-        style={{ display: "flex", alignItems: "center", padding: "14px 18px", cursor: "pointer", gap: 12 }}
-      >
-        <div style={{ flex: 1 }}>
+      <div onClick={() => setExpanded(!expanded)}
+        style={{ display: "flex", alignItems: "center", padding: "14px 16px", cursor: "pointer", gap: 10 }}>
+        <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ fontWeight: 700, fontSize: 15, color: "#0f172a" }}>{customer.name || "未命名客户"}</div>
-          <div style={{ fontSize: 12, color: "#94a3b8", marginTop: 2 }}>
-            流水 ¥{fmt(customer.revenue)} · 毛利 ¥{fmt(calc.grossProfit)} · 净利润率 {pct(calc.margin)}
+          <div style={{ fontSize: 11, color: "#94a3b8", marginTop: 2, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+            流水 ¥{fmt(customer.revenue)} · 毛利 ¥{fmt(calc.grossProfit)}
           </div>
         </div>
-        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-          {isNegative && <span style={{ background: "#ef4444", color: "#fff", fontSize: 10, fontWeight: 700, padding: "2px 8px", borderRadius: 99 }}>亏损</span>}
-          {!isNegative && isWarning && <span style={{ background: "#f59e0b", color: "#fff", fontSize: 10, fontWeight: 700, padding: "2px 8px", borderRadius: 99 }}>低利润</span>}
+        <div style={{ display: "flex", gap: 6, alignItems: "center", flexShrink: 0 }}>
+          {isNegative && <span style={{ background: "#ef4444", color: "#fff", fontSize: 10, fontWeight: 700, padding: "2px 7px", borderRadius: 99, whiteSpace: "nowrap" }}>亏损</span>}
+          {!isNegative && isWarning && <span style={{ background: "#f59e0b", color: "#fff", fontSize: 10, fontWeight: 700, padding: "2px 7px", borderRadius: 99, whiteSpace: "nowrap" }}>低利润</span>}
           <div style={{ textAlign: "right" }}>
-            <div style={{ fontSize: 16, fontWeight: 800, color: isNegative ? "#ef4444" : "#0ea5e9" }}>¥{fmt(calc.netProfit)}</div>
-            <div style={{ fontSize: 10, color: "#94a3b8" }}>平台净利润</div>
+            <div style={{ fontSize: 15, fontWeight: 800, color: isNegative ? "#ef4444" : "#0ea5e9", whiteSpace: "nowrap" }}>¥{fmt(calc.netProfit)}</div>
+            <div style={{ fontSize: 10, color: "#94a3b8" }}>净利润 {pct(calc.margin)}</div>
           </div>
           <div style={{ fontSize: 18, color: "#cbd5e1", transition: "transform 0.2s", transform: expanded ? "rotate(180deg)" : "rotate(0deg)" }}>▾</div>
         </div>
       </div>
 
-      {/* Expanded editor */}
       {expanded && (
-        <div style={{ padding: "0 18px 18px", borderTop: "1px solid #f1f5f9" }}>
-          <div style={{ height: 14 }} />
-
-          {/* Basic info grid */}
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 10, marginBottom: 14 }}>
+        <div style={{ padding: "0 16px 16px", borderTop: "1px solid #f1f5f9" }}>
+          <div style={{ height: 12 }} />
+          <div className="card-fields">
             {[
               { label: "客户名称", field: "name", type: "text" },
               { label: "月流水（元）", field: "revenue", type: "number" },
@@ -213,50 +203,39 @@ function CustomerCard({ customer, onUpdate, onDelete, globalFixedPerCustomer, wa
             ].map(({ label, field, type }) => (
               <div key={field}>
                 <label style={{ fontSize: 11, color: "#94a3b8", display: "block", marginBottom: 3 }}>{label}</label>
-                <input
-                  type={type}
-                  value={customer[field]}
+                <input type={type} value={customer[field]}
                   onChange={e => onUpdate({ ...customer, [field]: type === "number" ? parseFloat(e.target.value) || 0 : e.target.value })}
-                  style={inputStyle}
-                />
+                  style={inputStyle} />
               </div>
             ))}
           </div>
 
-          <div>
+          <div style={{ marginBottom: 14 }}>
             <label style={{ fontSize: 11, color: "#94a3b8", display: "block", marginBottom: 3 }}>该客户额外固定成本（元/月，选填）</label>
-            <input
-              type="number"
-              value={customer.additionalFixedCost}
-              min={0}
+            <input type="number" value={customer.additionalFixedCost} min={0}
               onChange={e => onUpdate({ ...customer, additionalFixedCost: parseFloat(e.target.value) || 0 })}
-              style={{ ...inputStyle, width: 180 }}
-            />
+              style={{ ...inputStyle, maxWidth: 200 }} />
           </div>
 
-          <div style={{ height: 14 }} />
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
+          <div className="rule-grid">
             <RuleEditor label="销售分成" rule={customer.sales} onChange={r => onUpdate({ ...customer, sales: r })} />
             <RuleEditor label="介绍人分成" rule={customer.referrer} onChange={r => onUpdate({ ...customer, referrer: r })} />
           </div>
 
-          {/* Mini calc preview */}
-          <div style={{ background: "#f8fafc", borderRadius: 10, padding: "12px 14px", fontSize: 12, color: "#475569" }}>
-            <div style={{ display: "flex", gap: 24, flexWrap: "wrap" }}>
+          <div style={{ background: "#f8fafc", borderRadius: 10, padding: "12px 14px", fontSize: 12, color: "#475569", marginTop: 4 }}>
+            <div style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>
               <span>毛利润 <strong>¥{fmt(calc.grossProfit)}</strong></span>
-              <span>销售分成 <strong style={{ color: "#6366f1" }}>¥{fmt(calc.salesComm)}</strong></span>
-              <span>介绍人分成 <strong style={{ color: "#8b5cf6" }}>¥{fmt(calc.referrerComm)}</strong></span>
-              <span>固定成本 <strong style={{ color: "#f59e0b" }}>¥{fmt(calc.totalFixed)}</strong></span>
-              <span>平台净利润 <strong style={{ color: isNegative ? "#ef4444" : "#0ea5e9" }}>¥{fmt(calc.netProfit)}</strong></span>
+              <span>销售 <strong style={{ color: "#6366f1" }}>¥{fmt(calc.salesComm)}</strong></span>
+              <span>介绍 <strong style={{ color: "#8b5cf6" }}>¥{fmt(calc.referrerComm)}</strong></span>
+              <span>成本 <strong style={{ color: "#f59e0b" }}>¥{fmt(calc.totalFixed)}</strong></span>
+              <span>净利 <strong style={{ color: isNegative ? "#ef4444" : "#0ea5e9" }}>¥{fmt(calc.netProfit)}</strong></span>
               <span>利润率 <strong style={{ color: isNegative ? "#ef4444" : isWarning ? "#f59e0b" : "#10b981" }}>{pct(calc.margin)}</strong></span>
             </div>
           </div>
 
           <div style={{ marginTop: 12, textAlign: "right" }}>
-            <button
-              onClick={() => onDelete(customer.id)}
-              style={{ fontSize: 12, color: "#ef4444", background: "none", border: "1px solid #fca5a5", padding: "5px 14px", borderRadius: 7, cursor: "pointer" }}
-            >
+            <button onClick={() => onDelete(customer.id)}
+              style={{ fontSize: 12, color: "#ef4444", background: "none", border: "1px solid #fca5a5", padding: "6px 14px", borderRadius: 7, cursor: "pointer" }}>
               删除此客户
             </button>
           </div>
@@ -268,16 +247,10 @@ function CustomerCard({ customer, onUpdate, onDelete, globalFixedPerCustomer, wa
 
 function StatCard({ label, value, sub, accent }) {
   return (
-    <div style={{
-      background: "#fff",
-      border: "1.5px solid #e2e8f0",
-      borderRadius: 14,
-      padding: "18px 20px",
-      borderTop: `4px solid ${accent}`,
-    }}>
-      <div style={{ fontSize: 11, color: "#94a3b8", fontWeight: 700, letterSpacing: 1, textTransform: "uppercase", marginBottom: 6 }}>{label}</div>
-      <div style={{ fontSize: 22, fontWeight: 800, color: "#0f172a", letterSpacing: -0.5 }}>{value}</div>
-      {sub && <div style={{ fontSize: 11, color: "#94a3b8", marginTop: 4 }}>{sub}</div>}
+    <div style={{ background: "#fff", border: "1.5px solid #e2e8f0", borderRadius: 12, padding: "14px 14px", borderTop: `4px solid ${accent}` }}>
+      <div style={{ fontSize: 10, color: "#94a3b8", fontWeight: 700, letterSpacing: 0.5, textTransform: "uppercase", marginBottom: 5 }}>{label}</div>
+      <div className="stat-value">{value}</div>
+      {sub && <div style={{ fontSize: 10, color: "#94a3b8", marginTop: 4 }}>{sub}</div>}
     </div>
   );
 }
@@ -307,7 +280,6 @@ function App() {
     return { totalRevenue, totalGrossProfit, totalSalesComm, totalReferrerComm, totalPlatformCost, totalNetProfit, commPct };
   }, [allCalc, globalFixed]);
 
-  // Per-person summary
   const personSummary = useMemo(() => {
     const map = {};
     allCalc.forEach(c => {
@@ -326,12 +298,7 @@ function App() {
 
   const addCustomer = () => {
     setCustomers(prev => [...prev, {
-      id: nextId++,
-      name: "",
-      revenue: 0,
-      cost: 0,
-      orderCount: 0,
-      additionalFixedCost: 0,
+      id: nextId++, name: "", revenue: 0, cost: 0, orderCount: 0, additionalFixedCost: 0,
       sales: { name: "", ruleType: "profit_pct", value: 15, cap: 60 },
       referrer: { name: "", ruleType: "none", value: 0, cap: 0 },
     }]);
@@ -347,7 +314,7 @@ function App() {
 
   const exportCSV = () => {
     const rows = [
-      ["客户名称", "月流水", "成本", "毛利润", "销售姓名", "销售分成", "介绍人姓名", "介绍人分成", "固定成本", "平台净利润", "利润率"],
+      ["客户名称","月流水","成本","毛利润","销售姓名","销售分成","介绍人姓名","介绍人分成","固定成本","平台净利润","利润率"],
       ...allCalc.map(c => [
         c.name, c.revenue, c.cost, c.calc.grossProfit,
         c.sales.name, c.calc.salesComm,
@@ -364,83 +331,82 @@ function App() {
   };
 
   return (
-    <div style={{ minHeight: "100vh", background: "#f1f5f9", fontFamily: "'PingFang SC', 'Microsoft YaHei', sans-serif" }}>
+    <div style={{ minHeight: "100vh", background: "#f1f5f9" }}>
+
       {/* Top bar */}
-      <div style={{ background: "linear-gradient(135deg, #0f172a 0%, #1e3a5f 100%)", padding: "20px 32px", display: "flex", alignItems: "center", gap: 24 }}>
-        <div>
-          <div style={{ color: "#38bdf8", fontSize: 11, fontWeight: 700, letterSpacing: 2, textTransform: "uppercase" }}>内部系统</div>
-          <div style={{ color: "#fff", fontSize: 20, fontWeight: 800, letterSpacing: -0.5 }}>计提分成计算器</div>
-        </div>
-        <div style={{ marginLeft: "auto", display: "flex", gap: 16, alignItems: "center" }}>
-          <div>
-            <label style={{ color: "#94a3b8", fontSize: 11, display: "block", marginBottom: 3 }}>核算月份</label>
-            <input type="month" value={period} onChange={e => setPeriod(e.target.value)}
-              style={{ ...inputStyle, width: 140, background: "rgba(255,255,255,0.08)", color: "#fff", border: "1px solid rgba(255,255,255,0.15)" }} />
+      <div className="topbar">
+        <div className="topbar-inner">
+          <div className="topbar-title">
+            <div style={{ color: "#38bdf8", fontSize: 10, fontWeight: 700, letterSpacing: 2, textTransform: "uppercase" }}>内部系统</div>
+            <div style={{ color: "#fff", fontSize: 18, fontWeight: 800, letterSpacing: -0.5 }}>计提分成计算器</div>
           </div>
-          <div>
-            <label style={{ color: "#94a3b8", fontSize: 11, display: "block", marginBottom: 3 }}>平台月度固定支出（元）</label>
-            <input type="number" value={globalFixed} min={0} onChange={e => setGlobalFixed(parseFloat(e.target.value) || 0)}
-              style={{ ...inputStyle, width: 160, background: "rgba(255,255,255,0.08)", color: "#fff", border: "1px solid rgba(255,255,255,0.15)" }} />
+          <div className="topbar-controls">
+            <div className="topbar-field">
+              <label style={{ color: "#94a3b8", fontSize: 11 }}>核算月份</label>
+              <input type="month" value={period} onChange={e => setPeriod(e.target.value)} style={darkInputStyle} />
+            </div>
+            <div className="topbar-field">
+              <label style={{ color: "#94a3b8", fontSize: 11 }}>月度固定支出（元）</label>
+              <input type="number" value={globalFixed} min={0}
+                onChange={e => setGlobalFixed(parseFloat(e.target.value) || 0)} style={darkInputStyle} />
+            </div>
+            <div className="topbar-field">
+              <label style={{ color: "#94a3b8", fontSize: 11 }}>利润率预警线（%）</label>
+              <input type="number" value={warningThreshold} min={0} max={50}
+                onChange={e => setWarningThreshold(parseFloat(e.target.value) || 0)} style={darkInputStyle} />
+            </div>
+            <button className="export-btn" onClick={exportCSV}
+              style={{ background: "#0ea5e9", color: "#fff", border: "none", borderRadius: 9, padding: "10px 18px", fontWeight: 700, fontSize: 13, cursor: "pointer", alignSelf: "flex-end" }}>
+              导出 CSV
+            </button>
           </div>
-          <div>
-            <label style={{ color: "#94a3b8", fontSize: 11, display: "block", marginBottom: 3 }}>利润率预警线（%）</label>
-            <input type="number" value={warningThreshold} min={0} max={50} onChange={e => setWarningThreshold(parseFloat(e.target.value) || 0)}
-              style={{ ...inputStyle, width: 110, background: "rgba(255,255,255,0.08)", color: "#fff", border: "1px solid rgba(255,255,255,0.15)" }} />
-          </div>
-          <button onClick={exportCSV}
-            style={{ background: "#0ea5e9", color: "#fff", border: "none", borderRadius: 9, padding: "10px 20px", fontWeight: 700, fontSize: 13, cursor: "pointer", marginTop: 14 }}>
-            导出 CSV
-          </button>
         </div>
       </div>
 
-      <div style={{ maxWidth: 1200, margin: "0 auto", padding: "28px 24px" }}>
+      <div style={{ maxWidth: 1200, margin: "0 auto", padding: "20px 14px" }}>
 
         {/* Overview cards */}
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 12, marginBottom: 28 }}>
+        <div className="overview-grid">
           <StatCard label="客户总数" value={customers.length + " 家"} accent="#0ea5e9" />
           <StatCard label="总流水" value={"¥" + fmt(overview.totalRevenue)} accent="#6366f1" />
           <StatCard label="总毛利润" value={"¥" + fmt(overview.totalGrossProfit)} accent="#8b5cf6" />
-          <StatCard label="销售总分成" value={"¥" + fmt(overview.totalSalesComm)} sub={pct(overview.totalSalesComm / (overview.totalGrossProfit || 1)) + " 占毛利"} accent="#6366f1" />
-          <StatCard label="介绍人总分成" value={"¥" + fmt(overview.totalReferrerComm)} sub={pct(overview.totalReferrerComm / (overview.totalGrossProfit || 1)) + " 占毛利"} accent="#8b5cf6" />
-          <StatCard label="平台总成本" value={"¥" + fmt(overview.totalPlatformCost)} sub={"分成占毛利 " + pct(overview.commPct)} accent="#f59e0b" />
+          <StatCard label="销售总分成" value={"¥" + fmt(overview.totalSalesComm)}
+            sub={pct(overview.totalSalesComm / (overview.totalGrossProfit || 1)) + " 占毛利"} accent="#6366f1" />
+          <StatCard label="介绍人总分成" value={"¥" + fmt(overview.totalReferrerComm)}
+            sub={pct(overview.totalReferrerComm / (overview.totalGrossProfit || 1)) + " 占毛利"} accent="#8b5cf6" />
+          <StatCard label="平台总成本" value={"¥" + fmt(overview.totalPlatformCost)}
+            sub={"分成占毛利 " + pct(overview.commPct)} accent="#f59e0b" />
           <StatCard label="平台最终利润" value={"¥" + fmt(overview.totalNetProfit)}
             sub={pct(overview.totalNetProfit / (overview.totalRevenue || 1)) + " 净利润率"}
             accent={overview.totalNetProfit < 0 ? "#ef4444" : "#10b981"} />
         </div>
 
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 320px", gap: 24 }}>
+        {/* Main layout */}
+        <div className="main-layout">
+
           {/* Left: customers */}
           <div>
-            <div style={{ display: "flex", alignItems: "center", marginBottom: 14 }}>
+            <div style={{ display: "flex", alignItems: "center", marginBottom: 12 }}>
               <div style={{ fontWeight: 800, fontSize: 16, color: "#0f172a" }}>客户明细</div>
               <button onClick={addCustomer}
-                style={{ marginLeft: "auto", background: "#0f172a", color: "#fff", border: "none", borderRadius: 9, padding: "8px 18px", fontWeight: 700, fontSize: 13, cursor: "pointer" }}>
+                style={{ marginLeft: "auto", background: "#0f172a", color: "#fff", border: "none", borderRadius: 9, padding: "8px 16px", fontWeight: 700, fontSize: 13, cursor: "pointer" }}>
                 + 新增客户
               </button>
             </div>
-
             {customers.length === 0 && (
               <div style={{ textAlign: "center", padding: "60px 0", color: "#94a3b8", fontSize: 14 }}>暂无客户，点击右上角新增</div>
             )}
-
             {allCalc.map(c => (
-              <CustomerCard
-                key={c.id}
-                customer={c}
-                onUpdate={updateCustomer}
-                onDelete={deleteCustomer}
-                globalFixedPerCustomer={globalFixedPerCustomer}
-                warningThreshold={warningThreshold}
-              />
+              <CustomerCard key={c.id} customer={c} onUpdate={updateCustomer} onDelete={deleteCustomer}
+                globalFixedPerCustomer={globalFixedPerCustomer} warningThreshold={warningThreshold} />
             ))}
           </div>
 
-          {/* Right: person summary + detail table */}
+          {/* Right: panels */}
           <div>
             {/* Person summary */}
-            <div style={{ background: "#fff", border: "1.5px solid #e2e8f0", borderRadius: 14, padding: "18px", marginBottom: 16 }}>
-              <div style={{ fontWeight: 800, fontSize: 14, color: "#0f172a", marginBottom: 14 }}>按人员汇总</div>
+            <div style={{ background: "#fff", border: "1.5px solid #e2e8f0", borderRadius: 14, padding: "16px", marginBottom: 14 }}>
+              <div style={{ fontWeight: 800, fontSize: 14, color: "#0f172a", marginBottom: 12 }}>按人员汇总</div>
               {personSummary.length === 0 && <div style={{ color: "#94a3b8", fontSize: 13 }}>暂无数据</div>}
               {personSummary.map(p => (
                 <div key={p.name} style={{ borderBottom: "1px solid #f1f5f9", paddingBottom: 10, marginBottom: 10 }}>
@@ -458,14 +424,14 @@ function App() {
             </div>
 
             {/* Detail table */}
-            <div style={{ background: "#fff", border: "1.5px solid #e2e8f0", borderRadius: 14, padding: "18px", overflow: "hidden" }}>
-              <div style={{ fontWeight: 800, fontSize: 14, color: "#0f172a", marginBottom: 14 }}>客户利润明细</div>
-              <div style={{ overflowX: "auto" }}>
-                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 11 }}>
+            <div style={{ background: "#fff", border: "1.5px solid #e2e8f0", borderRadius: 14, padding: "16px", overflow: "hidden" }}>
+              <div style={{ fontWeight: 800, fontSize: 14, color: "#0f172a", marginBottom: 12 }}>客户利润明细</div>
+              <div style={{ overflowX: "auto", WebkitOverflowScrolling: "touch" }}>
+                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 11, minWidth: 340 }}>
                   <thead>
                     <tr style={{ background: "#f8fafc" }}>
-                      {["客户", "毛利", "销售", "介绍", "成本", "净利", "利润率"].map(h => (
-                        <th key={h} style={{ padding: "6px 8px", textAlign: "right", color: "#64748b", fontWeight: 700, whiteSpace: "nowrap", borderBottom: "1px solid #e2e8f0" }}>{h}</th>
+                      {["客户","毛利","销售","介绍","成本","净利","利润率"].map(h => (
+                        <th key={h} style={{ padding: "6px 6px", textAlign: "right", color: "#64748b", fontWeight: 700, whiteSpace: "nowrap", borderBottom: "1px solid #e2e8f0" }}>{h}</th>
                       ))}
                     </tr>
                   </thead>
@@ -475,18 +441,16 @@ function App() {
                       const isWarn = c.calc.margin < warningThreshold / 100;
                       return (
                         <tr key={c.id} style={{ borderBottom: "1px solid #f1f5f9", background: isNeg ? "#fff5f5" : isWarn ? "#fffbeb" : "transparent" }}>
-                          <td style={{ padding: "6px 8px", fontWeight: 600, color: "#0f172a", maxWidth: 80, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.name || "—"}</td>
-                          <td style={{ padding: "6px 8px", textAlign: "right", color: "#475569" }}>{fmt(c.calc.grossProfit)}</td>
-                          <td style={{ padding: "6px 8px", textAlign: "right", color: "#6366f1" }}>{fmt(c.calc.salesComm)}</td>
-                          <td style={{ padding: "6px 8px", textAlign: "right", color: "#8b5cf6" }}>{fmt(c.calc.referrerComm)}</td>
-                          <td style={{ padding: "6px 8px", textAlign: "right", color: "#f59e0b" }}>{fmt(c.calc.totalFixed)}</td>
-                          <td style={{ padding: "6px 8px", textAlign: "right", color: isNeg ? "#ef4444" : "#0ea5e9", fontWeight: 700 }}>{fmt(c.calc.netProfit)}</td>
-                          <td style={{ padding: "6px 8px", textAlign: "right" }}>
-                            <span style={{
-                              background: isNeg ? "#fef2f2" : isWarn ? "#fffbeb" : "#f0fdf4",
-                              color: isNeg ? "#ef4444" : isWarn ? "#f59e0b" : "#10b981",
-                              fontWeight: 700, padding: "2px 6px", borderRadius: 6
-                            }}>{pct(c.calc.margin)}</span>
+                          <td style={{ padding: "6px 6px", fontWeight: 600, color: "#0f172a", maxWidth: 70, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.name || "—"}</td>
+                          <td style={{ padding: "6px 6px", textAlign: "right", color: "#475569" }}>{fmt(c.calc.grossProfit)}</td>
+                          <td style={{ padding: "6px 6px", textAlign: "right", color: "#6366f1" }}>{fmt(c.calc.salesComm)}</td>
+                          <td style={{ padding: "6px 6px", textAlign: "right", color: "#8b5cf6" }}>{fmt(c.calc.referrerComm)}</td>
+                          <td style={{ padding: "6px 6px", textAlign: "right", color: "#f59e0b" }}>{fmt(c.calc.totalFixed)}</td>
+                          <td style={{ padding: "6px 6px", textAlign: "right", color: isNeg ? "#ef4444" : "#0ea5e9", fontWeight: 700 }}>{fmt(c.calc.netProfit)}</td>
+                          <td style={{ padding: "6px 6px", textAlign: "right" }}>
+                            <span style={{ background: isNeg ? "#fef2f2" : isWarn ? "#fffbeb" : "#f0fdf4", color: isNeg ? "#ef4444" : isWarn ? "#f59e0b" : "#10b981", fontWeight: 700, padding: "2px 5px", borderRadius: 5 }}>
+                              {pct(c.calc.margin)}
+                            </span>
                           </td>
                         </tr>
                       );
@@ -501,7 +465,6 @@ function App() {
     </div>
   );
 }
-
 
 ReactDOM.createRoot(document.getElementById('root')).render(<App />);
 </script>
